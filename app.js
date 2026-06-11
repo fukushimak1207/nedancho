@@ -133,7 +133,8 @@ function judgePrice(itemId, price) {
   if (s.n30 < 3) {
     return { verdict: null, stats: s };
   }
-  const ratio = price / s.avg30 - 1;
+  // 0.1% 単位に丸めて浮動小数点誤差を消す(90/100-1 が -0.0999... になる対策)
+  const ratio = Math.round((price / s.avg30 - 1) * 1000) / 1000;
   let verdict;
   if (ratio <= -0.10) verdict = '安い';
   else if (ratio >= 0.10) verdict = '高い';
