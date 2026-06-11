@@ -24,7 +24,7 @@ function todayStr() {
     String(d.getDate()).padStart(2, '0');
 }
 
-// 購入日が今日から何日前か(今日=0)。未来日はマイナス。
+// 入力日が今日から何日前か(今日=0)。未来日はマイナス。
 function daysAgo(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   const t = new Date();
@@ -392,7 +392,7 @@ document.getElementById('btn-register').addEventListener('click', () => {
     return;
   }
   if (!dDate.value) {
-    alert('購入日を入力してください');
+    alert('入力日を入力してください');
     return;
   }
   if (!dStore.value) {
