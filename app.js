@@ -47,36 +47,59 @@ function esc(s) {
 /* ---------- 初期データ ---------- */
 
 function seedData() {
-  const item = (name, category, unit) => ({ id: uid(), name, category, unit });
+  // gram: true = 値段と内容量(g)から 100g あたりの単価を自動計算して記録する品目
+  const gItem = (name, category) => ({ id: uid(), name, category, unit: '100g', gram: true });
+  const uItem = (name, category, unit) => ({ id: uid(), name, category, unit, gram: false });
   return {
-    version: 1,
+    version: 2,
     items: [
-      item('国産鶏むね', '肉類', '100g'),
-      item('国産鶏もも', '肉類', '100g'),
-      item('国産ささみ', '肉類', '100g'),
-      item('国産豚こま', '肉類', '100g'),
-      item('外国産豚こま', '肉類', '100g'),
-      item('国産豚バラ', '肉類', '100g'),
-      item('外国産豚バラ', '肉類', '100g'),
-      item('合い挽き肉', '肉類', '100g'),
-      item('生たら', '魚介', '100g'),
-      item('塩サバ', '魚介', '1枚'),
-      item('サバ缶', '魚介', '1缶'),
-      item('卵10個', '卵・大豆', '1パック'),
-      item('豆腐', '卵・大豆', '1丁'),
-      item('納豆', '卵・大豆', '1パック'),
-      item('牛乳1L', '乳製品', '1本'),
-      item('ヨーグルト', '乳製品', '1個'),
-      item('冷凍ブロッコリー', '冷凍食品', '1袋'),
-      item('味噌', '調味料', '1個'),
-      item('醤油', '調味料', '1本'),
-      item('めんつゆ', '調味料', '1本'),
-      item('マヨネーズ', '調味料', '1本'),
+      gItem('国産鶏むね', '肉類'),
+      gItem('国産鶏もも', '肉類'),
+      gItem('国産ささみ', '肉類'),
+      gItem('国産豚こま', '肉類'),
+      gItem('外国産豚こま', '肉類'),
+      gItem('国産豚バラ', '肉類'),
+      gItem('外国産豚バラ', '肉類'),
+      gItem('合い挽き肉', '肉類'),
+      gItem('生たら', '魚介'),
+      gItem('塩サバ', '魚介'),
+      uItem('サバ缶', '魚介', '1缶'),
+      uItem('卵10個', '卵・大豆', '1パック'),
+      uItem('豆腐', '卵・大豆', '1丁'),
+      uItem('納豆', '卵・大豆', '1パック'),
+      uItem('牛乳1L', '乳製品', '1本'),
+      uItem('ヨーグルト', '乳製品', '1個'),
+      gItem('冷凍ブロッコリー', '冷凍食品'),
+      uItem('味噌', '調味料', '1個'),
+      uItem('醤油', '調味料', '1本'),
+      uItem('めんつゆ', '調味料', '1本'),
+      uItem('マヨネーズ', '調味料', '1本'),
     ],
     stores: ['OK', 'ロピア', 'イオン', 'そうてつローゼン', 'サミット', '東急ストア', 'まいばすけっと']
       .map(name => ({ id: uid(), name })),
-    prices: [], // { id, itemId, storeId, price, date }
+    // price は判定・相場計算に使う値。gram 品目では「100gあたりの単価」を入れる。
+    // gram 品目は rawPrice(支払った値段)と amount(内容量g)も持つ。
+    prices: [], // { id, itemId, storeId, price, date, rawPrice?, amount? }
   };
+}
+
+// 旧バージョンのデータを新形式に変換する
+function migrate(d) {
+  if (!d.version || d.version < 2) {
+    for (const i of d.items) {
+      if (i.gram === undefined) i.gram = (i.unit === '100g');
+    }
+    for (const p of d.prices) {
+      const item = d.items.find(i => i.id === p.itemId);
+      if (item && item.gram && p.amount === undefined) {
+        // 旧データは 100g 単価を直接入れていたとみなす
+        p.rawPrice = p.price;
+        p.amount = 100;
+      }
+    }
+    d.version = 2;
+  }
+  return d;
 }
 
 let data;
@@ -87,6 +110,9 @@ try {
 }
 if (!data || !Array.isArray(data.items)) {
   data = seedData();
+  save();
+} else {
+  data = migrate(data);
   save();
 }
 
@@ -215,10 +241,28 @@ document.getElementById('btn-back').addEventListener('click', () => {
 /* ---------- しらべる: 品目詳細(判定 + 登録) ---------- */
 
 const dPrice = document.getElementById('d-price');
+const dAmount = document.getElementById('d-amount');
+const dUnitPrice = document.getElementById('d-unitprice');
 const dJudge = document.getElementById('d-judge');
 const dStore = document.getElementById('d-store');
 const dDate = document.getElementById('d-date');
 const dBanner = document.getElementById('d-banner');
+
+// 入力欄から「判定・記録に使う価格」を計算する。
+// gram 品目: 値段と内容量(g)の両方が必要 → 100g あたりの単価を返す
+// それ以外: 値段をそのまま返す
+function currentEntry() {
+  const item = itemById(currentItemId);
+  const price = parseFloat(dPrice.value);
+  if (!(price >= 0) || dPrice.value === '') return { ok: false };
+  if (item && item.gram) {
+    const amount = parseFloat(dAmount.value);
+    if (!(amount > 0)) return { ok: false, needAmount: true };
+    const unitPrice = Math.round(price / amount * 100 * 100) / 100;
+    return { ok: true, gram: true, price: unitPrice, rawPrice: price, amount };
+  }
+  return { ok: true, gram: false, price };
+}
 
 function openItemDetail(itemId) {
   currentItemId = itemId;
@@ -226,8 +270,11 @@ function openItemDetail(itemId) {
   if (!item) return;
 
   document.getElementById('d-title').textContent = item.name;
-  document.getElementById('d-unit').textContent = item.unit;
+  document.getElementById('wrap-amount').hidden = !item.gram;
+  document.getElementById('lbl-price').textContent =
+    item.gram ? '値段(円)' : `値段(円 / ${item.unit})`;
   dPrice.value = '';
+  dAmount.value = '';
   dDate.value = todayStr();
   dBanner.hidden = true;
 
@@ -247,15 +294,29 @@ function openItemDetail(itemId) {
 }
 
 dPrice.addEventListener('input', renderJudge);
+dAmount.addEventListener('input', renderJudge);
 
 function renderJudge() {
-  const price = parseFloat(dPrice.value);
-  if (!(price >= 0) || dPrice.value === '') {
+  const item = itemById(currentItemId);
+  const entry = currentEntry();
+
+  // gram 品目: 100g あたりの単価をリアルタイム表示
+  if (item && item.gram && entry.ok) {
+    dUnitPrice.hidden = false;
+    dUnitPrice.textContent = `100gあたり ${fmtPrice(entry.price)}円`;
+  } else {
+    dUnitPrice.hidden = true;
+  }
+
+  if (!entry.ok) {
     dJudge.className = 'judge-badge judge-none';
-    dJudge.textContent = '価格を入力すると判定します';
+    dJudge.textContent = entry.needAmount
+      ? '内容量(g)も入力すると判定します'
+      : '価格を入力すると判定します';
     return;
   }
-  const r = judgePrice(currentItemId, price);
+  const suffix = entry.gram ? '円/100g' : '円';
+  const r = judgePrice(currentItemId, entry.price);
   if (r.verdict === null) {
     dJudge.className = 'judge-badge judge-none';
     dJudge.innerHTML = '判定なし<small>直近30日の記録が3件未満のため判定できません</small>';
@@ -265,21 +326,23 @@ function renderJudge() {
   const cls = { '安い': 'judge-cheap', '普通': 'judge-normal', '高い': 'judge-expensive' }[r.verdict];
   const dir = r.ratio < 0 ? '安い' : '高い';
   dJudge.className = 'judge-badge ' + cls;
-  dJudge.innerHTML = `${r.verdict}<small>30日平均 ${fmtPrice(r.stats.avg30)}円 より ${pct}% ${dir}</small>`;
+  dJudge.innerHTML = `${r.verdict}<small>30日平均 ${fmtPrice(r.stats.avg30)}${suffix} より ${pct}% ${dir}</small>`;
 }
 
 function renderStats() {
+  const item = itemById(currentItemId);
+  const suffix = (item && item.gram) ? '円/100g' : '円';
   const s = calcStats(currentItemId);
   const minText = s.min
-    ? `${fmtPrice(s.min.price)}円 <span class="sub">(${esc(s.min.date)}・${esc(storeName(s.min.storeId))})</span>`
+    ? `${fmtPrice(s.min.price)}${suffix} <span class="sub">(${esc(s.min.date)}・${esc(storeName(s.min.storeId))})</span>`
     : '-';
   const maxText = s.max
-    ? `${fmtPrice(s.max.price)}円 <span class="sub">(${esc(s.max.date)}・${esc(storeName(s.max.storeId))})</span>`
+    ? `${fmtPrice(s.max.price)}${suffix} <span class="sub">(${esc(s.max.date)}・${esc(storeName(s.max.storeId))})</span>`
     : '-';
   document.getElementById('d-stats').innerHTML = `
-    <tr><td>30日平均</td><td>${s.avg30 != null ? fmtPrice(s.avg30) + '円' : '-'}</td></tr>
-    <tr><td>90日平均</td><td>${s.avg90 != null ? fmtPrice(s.avg90) + '円' : '-'}</td></tr>
-    <tr><td>365日平均</td><td>${s.avg365 != null ? fmtPrice(s.avg365) + '円' : '-'}</td></tr>
+    <tr><td>30日平均</td><td>${s.avg30 != null ? fmtPrice(s.avg30) + suffix : '-'}</td></tr>
+    <tr><td>90日平均</td><td>${s.avg90 != null ? fmtPrice(s.avg90) + suffix : '-'}</td></tr>
+    <tr><td>365日平均</td><td>${s.avg365 != null ? fmtPrice(s.avg365) + suffix : '-'}</td></tr>
     <tr><td>365日最安値</td><td>${minText}</td></tr>
     <tr><td>365日最高値</td><td>${maxText}</td></tr>
     <tr><td>記録件数(365日)</td><td>${s.count}件</td></tr>`;
@@ -290,27 +353,42 @@ function storeName(id) {
   return s ? s.name : '(削除済み店舗)';
 }
 
+function priceText(p) {
+  // gram 記録は「100g単価」をメインに、支払った値段と内容量を添えて表示
+  if (p.amount != null) {
+    return {
+      main: `${fmtPrice(p.price)}円/100g`,
+      // ちょうど100gの記録はメイン表示と同じ内容になるので添え書きは省略
+      detail: (p.amount === 100) ? '' : `${fmtPrice(p.rawPrice)}円/${fmtPrice(p.amount)}g`,
+    };
+  }
+  return { main: `${fmtPrice(p.price)}円`, detail: '' };
+}
+
 function renderRecent() {
   const recent = data.prices
     .filter(p => p.itemId === currentItemId)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
   document.getElementById('d-recent').innerHTML = recent.length
-    ? recent.map(p => `
+    ? recent.map(p => {
+      const t = priceText(p);
+      return `
       <div class="record-row">
         <div class="info">
           <div class="main-line">${esc(storeName(p.storeId))}</div>
-          <div class="sub-line">${esc(p.date)}</div>
+          <div class="sub-line">${esc(p.date)}${t.detail ? '・' + t.detail : ''}</div>
         </div>
-        <div class="price">${fmtPrice(p.price)}円</div>
-      </div>`).join('')
+        <div class="price">${t.main}</div>
+      </div>`;
+    }).join('')
     : '<p class="empty">まだ記録がありません</p>';
 }
 
 document.getElementById('btn-register').addEventListener('click', () => {
-  const price = parseFloat(dPrice.value);
-  if (!(price >= 0) || dPrice.value === '') {
-    alert('価格を入力してください');
+  const entry = currentEntry();
+  if (!entry.ok) {
+    alert(entry.needAmount ? '内容量(g)を入力してください' : '価格を入力してください');
     return;
   }
   if (!dDate.value) {
@@ -324,15 +402,20 @@ document.getElementById('btn-register').addEventListener('click', () => {
 
   // 登録前の365日最安値と比較(最安値更新判定)
   const before = calcStats(currentItemId);
-  const isNewLow = before.min != null && price < before.min.price;
+  const isNewLow = before.min != null && entry.price < before.min.price;
 
-  data.prices.push({
+  const record = {
     id: uid(),
     itemId: currentItemId,
     storeId: dStore.value,
-    price,
+    price: entry.price,
     date: dDate.value,
-  });
+  };
+  if (entry.gram) {
+    record.rawPrice = entry.rawPrice;
+    record.amount = entry.amount;
+  }
+  data.prices.push(record);
   save();
   localStorage.setItem(LAST_STORE_KEY, dStore.value);
 
@@ -342,9 +425,12 @@ document.getElementById('btn-register').addEventListener('click', () => {
     dBanner.textContent = '🎉 最安値更新！';
   } else {
     dBanner.className = 'banner';
-    dBanner.textContent = '登録しました';
+    dBanner.textContent = entry.gram
+      ? `登録しました(100gあたり ${fmtPrice(entry.price)}円)`
+      : '登録しました';
   }
   dPrice.value = '';
+  dAmount.value = '';
   renderJudge();
   renderStats();
   renderRecent();
@@ -363,13 +449,14 @@ function renderHistory() {
   }
   historyList.innerHTML = records.map(p => {
     const item = itemById(p.itemId);
+    const t = priceText(p);
     return `
     <div class="record-row" data-id="${p.id}">
       <div class="info">
         <div class="main-line">${esc(item ? item.name : '(削除済み品目)')}</div>
-        <div class="sub-line">${esc(p.date)}・${esc(storeName(p.storeId))}</div>
+        <div class="sub-line">${esc(p.date)}・${esc(storeName(p.storeId))}${t.detail ? '・' + t.detail : ''}</div>
       </div>
-      <div class="price">${fmtPrice(p.price)}円</div>
+      <div class="price">${t.main}</div>
       <button class="mini-btn" data-act="edit" type="button">編集</button>
       <button class="mini-btn danger" data-act="del" type="button">削除</button>
     </div>`;
@@ -398,6 +485,13 @@ historyList.addEventListener('click', e => {
 const dlgPrice = document.getElementById('dlg-price');
 let editingPriceId = null;
 
+// 選択中の品目が gram 品目かどうかで内容量欄を出し分ける
+function syncEditAmountField() {
+  const item = itemById(document.getElementById('f-price-item').value);
+  document.getElementById('wrap-edit-amount').hidden = !(item && item.gram);
+}
+document.getElementById('f-price-item').addEventListener('change', syncEditAmountField);
+
 function openPriceDialog(id) {
   const p = data.prices.find(x => x.id === id);
   if (!p) return;
@@ -406,8 +500,11 @@ function openPriceDialog(id) {
     `<option value="${i.id}" ${i.id === p.itemId ? 'selected' : ''}>${esc(i.name)}</option>`).join('');
   document.getElementById('f-price-store').innerHTML = data.stores.map(s =>
     `<option value="${s.id}" ${s.id === p.storeId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
-  document.getElementById('f-price-price').value = p.price;
+  // gram 記録は「支払った値段」を編集させる(100g単価は保存時に再計算)
+  document.getElementById('f-price-price').value = (p.rawPrice != null) ? p.rawPrice : p.price;
+  document.getElementById('f-price-amount').value = (p.amount != null) ? p.amount : '';
   document.getElementById('f-price-date').value = p.date;
+  syncEditAmountField();
   dlgPrice.showModal();
 }
 
@@ -415,9 +512,25 @@ document.getElementById('form-price').addEventListener('submit', e => {
   e.preventDefault();
   const p = data.prices.find(x => x.id === editingPriceId);
   if (p) {
-    p.itemId = document.getElementById('f-price-item').value;
+    const itemId = document.getElementById('f-price-item').value;
+    const item = itemById(itemId);
+    const price = parseFloat(document.getElementById('f-price-price').value);
+    if (item && item.gram) {
+      const amount = parseFloat(document.getElementById('f-price-amount').value);
+      if (!(amount > 0)) {
+        alert('内容量(g)を入力してください');
+        return;
+      }
+      p.rawPrice = price;
+      p.amount = amount;
+      p.price = Math.round(price / amount * 100 * 100) / 100;
+    } else {
+      p.price = price;
+      delete p.rawPrice;
+      delete p.amount;
+    }
+    p.itemId = itemId;
     p.storeId = document.getElementById('f-price-store').value;
-    p.price = parseFloat(document.getElementById('f-price-price').value);
     p.date = document.getElementById('f-price-date').value;
     save();
   }
@@ -435,7 +548,7 @@ function renderSettings() {
     <div class="record-row" data-id="${i.id}">
       <div class="info">
         <div class="main-line">${esc(i.name)}</div>
-        <div class="sub-line">${esc(i.category)}・${esc(i.unit)}</div>
+        <div class="sub-line">${esc(i.category)}・${esc(i.unit)}${i.gram ? '(値段+内容量で入力)' : ''}</div>
       </div>
       <button class="mini-btn" data-act="edit" type="button">編集</button>
       <button class="mini-btn danger" data-act="del" type="button">削除</button>
@@ -469,13 +582,29 @@ document.getElementById('settings-items').addEventListener('click', e => {
   }
 });
 
+// チェック中は単位を 100g に固定する
+const fItemGram = document.getElementById('f-item-gram');
+const fItemUnit = document.getElementById('f-item-unit');
+fItemGram.addEventListener('change', syncItemUnitField);
+
+function syncItemUnitField() {
+  if (fItemGram.checked) {
+    fItemUnit.value = '100g';
+    fItemUnit.disabled = true;
+  } else {
+    fItemUnit.disabled = false;
+  }
+}
+
 function openItemDialog(id) {
   editingItemId = id;
   const item = id ? itemById(id) : null;
   document.getElementById('dlg-item-title').textContent = item ? '品目を編集' : '品目を追加';
   document.getElementById('f-item-name').value = item ? item.name : '';
   document.getElementById('f-item-category').value = item ? item.category : '';
-  document.getElementById('f-item-unit').value = item ? item.unit : '';
+  fItemGram.checked = item ? !!item.gram : true; // 新規は100g管理を初期値に
+  fItemUnit.value = item ? item.unit : '100g';
+  syncItemUnitField();
   // 既存カテゴリを入力候補に
   const cats = [...new Set(data.items.map(i => i.category))];
   document.getElementById('category-list').innerHTML =
@@ -487,13 +616,17 @@ document.getElementById('form-item').addEventListener('submit', e => {
   e.preventDefault();
   const name = document.getElementById('f-item-name').value.trim();
   const category = document.getElementById('f-item-category').value.trim();
-  const unit = document.getElementById('f-item-unit').value.trim();
-  if (!name || !category || !unit) return;
+  const gram = fItemGram.checked;
+  const unit = gram ? '100g' : fItemUnit.value.trim();
+  if (!name || !category || !unit) {
+    alert('品目名・カテゴリ・単位を入力してください');
+    return;
+  }
   if (editingItemId) {
     const item = itemById(editingItemId);
-    Object.assign(item, { name, category, unit });
+    Object.assign(item, { name, category, unit, gram });
   } else {
-    data.items.push({ id: uid(), name, category, unit });
+    data.items.push({ id: uid(), name, category, unit, gram });
   }
   save();
   dlgItem.close();
@@ -578,7 +711,7 @@ importFile.addEventListener('change', () => {
         throw new Error('形式が違います');
       }
       if (confirm(`バックアップを読み込みますか?\n品目 ${imported.items.length}件 / 店舗 ${imported.stores.length}件 / 価格記録 ${imported.prices.length}件\n\n※ いまのデータはすべて置き換えられます`)) {
-        data = imported;
+        data = migrate(imported);
         save();
         renderSettings();
         alert('インポートしました');

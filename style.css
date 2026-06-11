@@ -110,12 +110,25 @@ h3 { font-size: 1rem; margin: 20px 0 6px; color: var(--accent-dark); }
   color: var(--muted);
   margin-bottom: 6px;
 }
-#d-price {
+.price-inputs {
+  display: flex;
+  gap: 10px;
+}
+.price-inputs label { flex: 1; }
+.price-inputs input {
   width: 100%;
   font-size: 1.6rem;
   padding: 10px 12px;
   border: 2px solid var(--line);
   border-radius: 10px;
+}
+
+.unit-price {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: bold;
+  color: var(--accent-dark);
 }
 
 .judge-badge {
@@ -301,6 +314,16 @@ dialog input, dialog select {
   border-radius: 8px;
   margin-top: 4px;
 }
+dialog input[type="checkbox"] {
+  display: inline;
+  width: auto;
+  margin: 0 6px 0 0;
+}
+dialog .check-label {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+dialog input:disabled { background: #f0e9df; color: var(--muted); }
 .dlg-actions {
   display: flex;
   gap: 10px;

@@ -28,8 +28,15 @@
       <h2 id="d-title"></h2>
 
       <div class="judge-card">
-        <label for="d-price">いまの価格(円 / <span id="d-unit"></span>)</label>
-        <input type="number" id="d-price" inputmode="decimal" min="0" placeholder="例: 79">
+        <div class="price-inputs">
+          <label id="wrap-price"><span id="lbl-price">値段(円)</span>
+            <input type="number" id="d-price" inputmode="decimal" min="0" placeholder="例: 298">
+          </label>
+          <label id="wrap-amount">内容量(g)
+            <input type="number" id="d-amount" inputmode="decimal" min="0" placeholder="例: 250">
+          </label>
+        </div>
+        <div id="d-unitprice" class="unit-price" hidden></div>
         <div id="d-judge" class="judge-badge judge-none">価格を入力すると判定します</div>
       </div>
 
@@ -97,8 +104,12 @@
       <input id="f-item-category" list="category-list" required placeholder="例: 肉類">
     </label>
     <datalist id="category-list"></datalist>
+    <label class="check-label">
+      <input type="checkbox" id="f-item-gram">
+      100gあたりの単価で記録する(値段と内容量から自動計算)
+    </label>
     <label>単位
-      <input id="f-item-unit" required placeholder="例: 100g / 1パック / 1本">
+      <input id="f-item-unit" placeholder="例: 1パック / 1本 / 1丁">
     </label>
     <div class="dlg-actions">
       <button type="button" class="secondary" data-close>キャンセル</button>
@@ -131,8 +142,11 @@
     <label>店舗
       <select id="f-price-store"></select>
     </label>
-    <label>価格(円)
+    <label>値段(円)
       <input type="number" id="f-price-price" inputmode="decimal" min="0" required>
+    </label>
+    <label id="wrap-edit-amount">内容量(g)
+      <input type="number" id="f-price-amount" inputmode="decimal" min="0">
     </label>
     <label>購入日
       <input type="date" id="f-price-date" required>
