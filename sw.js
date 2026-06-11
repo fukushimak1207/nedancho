@@ -2,7 +2,7 @@
  * アプリのファイルを端末にキャッシュして、圏外でも開けるようにする。
  * ファイルを更新したら CACHE_VERSION の数字を上げること。
  */
-const CACHE_VERSION = 'nedancho-v4';
+const CACHE_VERSION = 'nedancho-v5';
 const ASSETS = [
   './',
   './index.html',

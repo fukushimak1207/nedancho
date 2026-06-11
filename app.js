@@ -200,7 +200,23 @@ let currentItemId = null;
 
 searchBox.addEventListener('input', renderItemList);
 
+// 並び順: manual = 設定タブの並べ替え順 / popular = 記録回数の多い順
+const SORT_KEY = 'nedancho:sortMode';
+let sortMode = localStorage.getItem(SORT_KEY) === 'popular' ? 'popular' : 'manual';
+
+document.getElementById('sort-manual').addEventListener('click', () => setSortMode('manual'));
+document.getElementById('sort-popular').addEventListener('click', () => setSortMode('popular'));
+
+function setSortMode(mode) {
+  sortMode = mode;
+  localStorage.setItem(SORT_KEY, mode);
+  renderItemList();
+}
+
 function renderItemList() {
+  document.getElementById('sort-manual').classList.toggle('active', sortMode === 'manual');
+  document.getElementById('sort-popular').classList.toggle('active', sortMode === 'popular');
+
   const q = searchBox.value.trim().toLowerCase();
   const items = data.items.filter(i =>
     !q || i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
@@ -209,19 +225,32 @@ function renderItemList() {
     itemListEl.innerHTML = '<p class="empty">該当する品目がありません。<br>設定タブから品目を追加できます。</p>';
     return;
   }
-  // カテゴリごとにまとめて表示
-  const byCat = new Map();
-  for (const i of items) {
-    if (!byCat.has(i.category)) byCat.set(i.category, []);
-    byCat.get(i.category).push(i);
-  }
+
   let html = '';
-  for (const [cat, list] of byCat) {
-    html += `<div class="category-name">${esc(cat)}</div>`;
-    for (const i of list) {
+  if (sortMode === 'popular') {
+    // 365日間の記録回数が多い順(同数なら登録順を維持)
+    const count = new Map(items.map(i => [i.id, pricesForItem(i.id, 365).length]));
+    const sorted = [...items].sort((a, b) => count.get(b.id) - count.get(a.id));
+    for (const i of sorted) {
+      const n = count.get(i.id);
       html += `<button class="item-btn" data-id="${i.id}" type="button">
-        <span>${esc(i.name)}</span><span class="unit">${esc(i.unit)}</span>
+        <span>${esc(i.name)}</span><span class="unit">${n ? n + '回・' : ''}${esc(i.unit)}</span>
       </button>`;
+    }
+  } else {
+    // カテゴリごとにまとめて表示
+    const byCat = new Map();
+    for (const i of items) {
+      if (!byCat.has(i.category)) byCat.set(i.category, []);
+      byCat.get(i.category).push(i);
+    }
+    for (const [cat, list] of byCat) {
+      html += `<div class="category-name">${esc(cat)}</div>`;
+      for (const i of list) {
+        html += `<button class="item-btn" data-id="${i.id}" type="button">
+          <span>${esc(i.name)}</span><span class="unit">${esc(i.unit)}</span>
+        </button>`;
+      }
     }
   }
   itemListEl.innerHTML = html;
@@ -285,6 +314,8 @@ function openItemDetail(itemId) {
 
   renderJudge();
   renderStats();
+  renderStoreStats();
+  renderChart();
   renderRecent();
 
   checkHome.hidden = true;
@@ -351,6 +382,85 @@ function renderStats() {
 function storeName(id) {
   const s = storeById(id);
   return s ? s.name : '(削除済み店舗)';
+}
+
+// 店舗ごとの平均・最安・件数(365日)。平均の安い順に表示し、先頭に「最安」バッジ
+function renderStoreStats() {
+  const el = document.getElementById('d-stores');
+  const item = itemById(currentItemId);
+  const suffix = (item && item.gram) ? '円/100g' : '円';
+  const p365 = pricesForItem(currentItemId, 365);
+  if (p365.length === 0) {
+    el.innerHTML = '<p class="empty">まだ記録がありません</p>';
+    return;
+  }
+  const byStore = new Map();
+  for (const p of p365) {
+    if (!byStore.has(p.storeId)) byStore.set(p.storeId, []);
+    byStore.get(p.storeId).push(p.price);
+  }
+  const rows = [...byStore.entries()].map(([storeId, prices]) => ({
+    name: storeName(storeId),
+    avg: prices.reduce((s, v) => s + v, 0) / prices.length,
+    min: Math.min(...prices),
+    count: prices.length,
+  })).sort((a, b) => a.avg - b.avg);
+
+  el.innerHTML = `
+  <table class="stats-table store-table">
+    <tr class="head"><td>店舗</td><td>平均</td><td>最安</td><td>件数</td></tr>
+    ${rows.map((r, idx) => `
+    <tr class="${idx === 0 && rows.length > 1 ? 'best-row' : ''}">
+      <td>${idx === 0 && rows.length > 1 ? '<span class="best-badge">最安</span>' : ''}${esc(r.name)}</td>
+      <td>${fmtPrice(r.avg)}${suffix}</td>
+      <td>${fmtPrice(r.min)}${suffix}</td>
+      <td>${r.count}件</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+// 365日分の記録を折れ線グラフで表示(SVG手描き・ライブラリなし)
+function renderChart() {
+  const el = document.getElementById('d-chart');
+  const pts = pricesForItem(currentItemId, 365)
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (pts.length < 2) {
+    el.innerHTML = '<p class="empty">記録が2件以上たまるとグラフを表示します</p>';
+    return;
+  }
+  const W = 320, H = 140, L = 46, R = 12, T = 14, B = 24;
+  const prices = pts.map(p => p.price);
+  let min = Math.min(...prices), max = Math.max(...prices);
+  if (min === max) { min -= 10; max += 10; }
+  else {
+    const pad = (max - min) * 0.12;
+    min -= pad; max += pad;
+  }
+  const times = pts.map(p => new Date(p.date + 'T00:00:00').getTime());
+  const t0 = Math.min(...times), t1 = Math.max(...times);
+  const X = i => (t1 === t0)
+    ? L + (W - L - R) * (i / (pts.length - 1))
+    : L + (W - L - R) * ((times[i] - t0) / (t1 - t0));
+  const Y = v => T + (H - T - B) * (1 - (v - min) / (max - min));
+
+  const line = pts.map((p, i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(' ');
+  const dots = pts.map((p, i) =>
+    `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.price).toFixed(1)}" r="3.2"/>`).join('');
+  const md = s => `${parseInt(s.slice(5, 7), 10)}/${parseInt(s.slice(8, 10), 10)}`;
+  const yMaxV = Math.max(...prices), yMinV = Math.min(...prices);
+
+  el.innerHTML = `
+  <svg class="chart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="価格の推移グラフ">
+    <line x1="${L}" y1="${Y(yMaxV)}" x2="${W - R}" y2="${Y(yMaxV)}" class="grid"/>
+    <line x1="${L}" y1="${Y(yMinV)}" x2="${W - R}" y2="${Y(yMinV)}" class="grid"/>
+    <text x="${L - 5}" y="${Y(yMaxV) + 4}" class="ylabel">${fmtPrice(yMaxV)}円</text>
+    <text x="${L - 5}" y="${Y(yMinV) + 4}" class="ylabel">${fmtPrice(yMinV)}円</text>
+    <text x="${L}" y="${H - 6}" class="xlabel">${md(pts[0].date)}</text>
+    <text x="${W - R}" y="${H - 6}" class="xlabel end">${md(pts[pts.length - 1].date)}</text>
+    <polyline points="${line}" class="line"/>
+    <g class="dots">${dots}</g>
+  </svg>`;
 }
 
 function priceText(p) {
@@ -433,6 +543,8 @@ document.getElementById('btn-register').addEventListener('click', () => {
   dAmount.value = '';
   renderJudge();
   renderStats();
+  renderStoreStats();
+  renderChart();
   renderRecent();
 });
 

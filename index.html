@@ -20,6 +20,10 @@
   <section id="view-check" class="view">
     <div id="check-home">
       <input type="search" id="search-box" placeholder="品目をさがす(例: 鶏むね)" autocomplete="off">
+      <div class="sort-toggle">
+        <button id="sort-manual" class="sort-btn" type="button">登録順</button>
+        <button id="sort-popular" class="sort-btn" type="button">よく使う順</button>
+      </div>
       <div id="item-list"></div>
     </div>
 
@@ -53,6 +57,12 @@
 
       <h3>相場データ</h3>
       <table class="stats-table"><tbody id="d-stats"></tbody></table>
+
+      <h3>店舗別の相場(365日)</h3>
+      <div id="d-stores"></div>
+
+      <h3>価格の推移(365日)</h3>
+      <div id="d-chart"></div>
 
       <h3>最近の記録</h3>
       <div id="d-recent"></div>

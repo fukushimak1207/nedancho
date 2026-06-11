@@ -54,6 +54,28 @@ h3 { font-size: 1rem; margin: 20px 0 6px; color: var(--accent-dark); }
   margin-bottom: 10px;
 }
 
+.sort-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.sort-btn {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.sort-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: bold;
+}
+
 .category-name {
   font-size: 0.85rem;
   color: var(--muted);
@@ -231,6 +253,53 @@ button.secondary {
 .stats-table td:first-child { color: var(--muted); width: 45%; }
 .stats-table td:last-child { font-weight: bold; }
 .stats-table .sub { font-weight: normal; font-size: 0.8rem; color: var(--muted); }
+
+/* 店舗別の相場 */
+.store-table td { width: auto; font-weight: normal; }
+.store-table td:first-child { color: var(--text); width: auto; }
+.store-table .head td {
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 6px 12px;
+  background: #fdf3e6;
+}
+.store-table .best-row td { background: #eaf7ee; font-weight: bold; }
+.best-badge {
+  display: inline-block;
+  background: var(--cheap);
+  color: #fff;
+  font-size: 0.7rem;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-right: 6px;
+}
+
+/* 価格推移グラフ */
+.chart {
+  width: 100%;
+  height: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.chart .line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.chart .dots circle { fill: var(--accent-dark); }
+.chart .grid {
+  stroke: var(--line);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+}
+.chart .ylabel {
+  font-size: 9px;
+  fill: var(--muted);
+  text-anchor: end;
+}
+.chart .xlabel { font-size: 9px; fill: var(--muted); }
+.chart .xlabel.end { text-anchor: end; }
 
 /* ---------- 履歴・一覧 ---------- */
 .record-row {
