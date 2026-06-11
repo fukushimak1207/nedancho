@@ -544,8 +544,13 @@ const dlgItem = document.getElementById('dlg-item');
 let editingItemId = null;
 
 function renderSettings() {
-  document.getElementById('settings-items').innerHTML = data.items.map(i => `
+  const last = data.items.length - 1;
+  document.getElementById('settings-items').innerHTML = data.items.map((i, idx) => `
     <div class="record-row" data-id="${i.id}">
+      <div class="move-btns">
+        <button class="mini-btn move" data-act="up" type="button" ${idx === 0 ? 'disabled' : ''}>▲</button>
+        <button class="mini-btn move" data-act="down" type="button" ${idx === last ? 'disabled' : ''}>▼</button>
+      </div>
       <div class="info">
         <div class="main-line">${esc(i.name)}</div>
         <div class="sub-line">${esc(i.category)}・${esc(i.unit)}${i.gram ? '(値段+内容量で入力)' : ''}</div>
@@ -568,6 +573,16 @@ document.getElementById('settings-items').addEventListener('click', e => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
   const id = btn.closest('.record-row').dataset.id;
+  if (btn.dataset.act === 'up' || btn.dataset.act === 'down') {
+    const idx = data.items.findIndex(i => i.id === id);
+    const to = btn.dataset.act === 'up' ? idx - 1 : idx + 1;
+    if (to < 0 || to >= data.items.length) return;
+    // 隣と入れ替え
+    [data.items[idx], data.items[to]] = [data.items[to], data.items[idx]];
+    save();
+    renderSettings();
+    return;
+  }
   if (btn.dataset.act === 'del') {
     const item = itemById(id);
     const n = data.prices.filter(p => p.itemId === id).length;

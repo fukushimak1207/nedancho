@@ -260,6 +260,22 @@ button.secondary {
 }
 .mini-btn.danger { color: var(--expensive); border-color: #f0c4c4; }
 
+.move-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mini-btn.move {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  color: var(--accent-dark);
+}
+.mini-btn.move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .note { color: var(--muted); font-size: 0.85rem; }
 .version { margin-top: 24px; text-align: center; }
 
