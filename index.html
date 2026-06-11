@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#e8772e">
+<title>ねだん帳</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="app-header">
+  <h1>ねだん帳</h1>
+</header>
+
+<main id="main">
+
+  <!-- しらべる -->
+  <section id="view-check" class="view">
+    <div id="check-home">
+      <input type="search" id="search-box" placeholder="品目をさがす(例: 鶏むね)" autocomplete="off">
+      <div id="item-list"></div>
+    </div>
+
+    <div id="item-detail" hidden>
+      <button id="btn-back" class="link-btn" type="button">← 品目一覧にもどる</button>
+      <h2 id="d-title"></h2>
+
+      <div class="judge-card">
+        <label for="d-price">いまの価格(円 / <span id="d-unit"></span>)</label>
+        <input type="number" id="d-price" inputmode="decimal" min="0" placeholder="例: 79">
+        <div id="d-judge" class="judge-badge judge-none">価格を入力すると判定します</div>
+      </div>
+
+      <div class="form-row">
+        <label>店舗
+          <select id="d-store"></select>
+        </label>
+        <label>購入日
+          <input type="date" id="d-date">
+        </label>
+      </div>
+      <button id="btn-register" class="primary" type="button">この価格で登録する</button>
+      <div id="d-banner" class="banner" hidden></div>
+
+      <h3>相場データ</h3>
+      <table class="stats-table"><tbody id="d-stats"></tbody></table>
+
+      <h3>最近の記録</h3>
+      <div id="d-recent"></div>
+    </div>
+  </section>
+
+  <!-- 履歴 -->
+  <section id="view-history" class="view" hidden>
+    <h2>記録の履歴</h2>
+    <div id="history-list"></div>
+  </section>
+
+  <!-- 設定 -->
+  <section id="view-settings" class="view" hidden>
+    <h2>品目管理</h2>
+    <button id="btn-add-item" class="secondary" type="button">＋ 品目を追加</button>
+    <div id="settings-items"></div>
+
+    <h2>店舗管理</h2>
+    <button id="btn-add-store" class="secondary" type="button">＋ 店舗を追加</button>
+    <div id="settings-stores"></div>
+
+    <h2>バックアップ</h2>
+    <p class="note">データはこの端末のブラウザ内だけに保存されています。ときどきエクスポートしてファイルを保管しておくと安心です。</p>
+    <div class="btn-row">
+      <button id="btn-export" class="secondary" type="button">エクスポート(保存)</button>
+      <button id="btn-import" class="secondary" type="button">インポート(復元)</button>
+    </div>
+    <input type="file" id="import-file" accept=".json,application/json" hidden>
+    <p class="note version">ねだん帳 Ver 1.0(オフライン対応)</p>
+  </section>
+
+</main>
+
+<nav class="tabbar">
+  <button class="tab active" data-tab="check" type="button"><span>🔍</span>しらべる</button>
+  <button class="tab" data-tab="history" type="button"><span>📋</span>履歴</button>
+  <button class="tab" data-tab="settings" type="button"><span>⚙️</span>設定</button>
+</nav>
+
+<!-- 品目フォーム -->
+<dialog id="dlg-item">
+  <form id="form-item">
+    <h3 id="dlg-item-title">品目を追加</h3>
+    <label>品目名
+      <input id="f-item-name" required placeholder="例: 国産鶏むね">
+    </label>
+    <label>カテゴリ
+      <input id="f-item-category" list="category-list" required placeholder="例: 肉類">
+    </label>
+    <datalist id="category-list"></datalist>
+    <label>単位
+      <input id="f-item-unit" required placeholder="例: 100g / 1パック / 1本">
+    </label>
+    <div class="dlg-actions">
+      <button type="button" class="secondary" data-close>キャンセル</button>
+      <button type="submit" class="primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 店舗フォーム -->
+<dialog id="dlg-store">
+  <form id="form-store">
+    <h3 id="dlg-store-title">店舗を追加</h3>
+    <label>店舗名
+      <input id="f-store-name" required placeholder="例: OK">
+    </label>
+    <div class="dlg-actions">
+      <button type="button" class="secondary" data-close>キャンセル</button>
+      <button type="submit" class="primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 価格記録の編集フォーム -->
+<dialog id="dlg-price">
+  <form id="form-price">
+    <h3>記録を編集</h3>
+    <label>品目
+      <select id="f-price-item"></select>
+    </label>
+    <label>店舗
+      <select id="f-price-store"></select>
+    </label>
+    <label>価格(円)
+      <input type="number" id="f-price-price" inputmode="decimal" min="0" required>
+    </label>
+    <label>購入日
+      <input type="date" id="f-price-date" required>
+    </label>
+    <div class="dlg-actions">
+      <button type="button" class="secondary" data-close>キャンセル</button>
+      <button type="submit" class="primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

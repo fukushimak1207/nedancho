@@ -1,0 +1,25 @@
+{
+  "name": "ねだん帳",
+  "short_name": "ねだん帳",
+  "description": "スーパーの食品価格を記録して、安い・普通・高いを判定する自分専用の相場帳",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fff7ec",
+  "theme_color": "#e8772e",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
