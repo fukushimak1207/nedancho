@@ -8,6 +8,8 @@
 
 const STORAGE_KEY = 'nedancho:data:v1';
 const LAST_STORE_KEY = 'nedancho:lastStore';
+const SYNC_URL_KEY = 'nedancho:syncUrl';
+const SYNC_TIME_KEY = 'nedancho:lastSync';
 
 /* ---------- ユーティリティ ---------- */
 
@@ -46,12 +48,24 @@ function esc(s) {
 
 /* ---------- 初期データ ---------- */
 
+// 初期品目・初期店舗の ID は端末間で共通の固定値にする
+// (端末ごとにランダムIDだと、同期したとき同じ品目が二重になるため)
+const SEED_ITEM_NAMES = [
+  '国産鶏むね', '国産鶏もも', '国産ささみ', '国産豚こま', '外国産豚こま',
+  '国産豚バラ', '外国産豚バラ', '合い挽き肉', '生たら', '塩サバ', 'サバ缶',
+  '卵10個', '豆腐', '納豆', '牛乳1L', 'ヨーグルト', '冷凍ブロッコリー',
+  '味噌', '醤油', 'めんつゆ', 'マヨネーズ',
+];
+const SEED_STORE_NAMES = ['OK', 'ロピア', 'イオン', 'そうてつローゼン', 'サミット', '東急ストア', 'まいばすけっと'];
+
 function seedData() {
   // gram: true = 値段と内容量(g)から 100g あたりの単価を自動計算して記録する品目
-  const gItem = (name, category) => ({ id: uid(), name, category, unit: '100g', gram: true });
-  const uItem = (name, category, unit) => ({ id: uid(), name, category, unit, gram: false });
+  // ord = 表示順 / u = 最終更新時刻(同期でどちらが新しいか比べるのに使う)
+  let ord = 0;
+  const gItem = (name, category) => ({ id: 'seed-item-' + name, name, category, unit: '100g', gram: true, ord: (ord += 10), u: 0 });
+  const uItem = (name, category, unit) => ({ id: 'seed-item-' + name, name, category, unit, gram: false, ord: (ord += 10), u: 0 });
   return {
-    version: 2,
+    version: 3,
     items: [
       gItem('国産鶏むね', '肉類'),
       gItem('国産鶏もも', '肉類'),
@@ -75,8 +89,7 @@ function seedData() {
       uItem('めんつゆ', '調味料', '1本'),
       uItem('マヨネーズ', '調味料', '1本'),
     ],
-    stores: ['OK', 'ロピア', 'イオン', 'そうてつローゼン', 'サミット', '東急ストア', 'まいばすけっと']
-      .map(name => ({ id: uid(), name })),
+    stores: SEED_STORE_NAMES.map(name => ({ id: 'seed-store-' + name, name, u: 0 })),
     // price は判定・相場計算に使う値。gram 品目では「100gあたりの単価」を入れる。
     // gram 品目は rawPrice(支払った値段)と amount(内容量g)も持つ。
     prices: [], // { id, itemId, storeId, price, date, rawPrice?, amount? }
@@ -99,6 +112,33 @@ function migrate(d) {
     }
     d.version = 2;
   }
+  if (d.version < 3) {
+    // 初期品目・初期店舗のIDを端末間共通の固定値に置き換える(同期での二重化防止)
+    const seedItems = new Set(SEED_ITEM_NAMES);
+    for (const i of d.items) {
+      const cid = 'seed-item-' + i.name;
+      if (seedItems.has(i.name) && i.id !== cid) {
+        for (const p of d.prices) if (p.itemId === i.id) p.itemId = cid;
+        i.id = cid;
+      }
+    }
+    const seedStores = new Set(SEED_STORE_NAMES);
+    for (const s of d.stores) {
+      const cid = 'seed-store-' + s.name;
+      if (seedStores.has(s.name) && s.id !== cid) {
+        for (const p of d.prices) if (p.storeId === s.id) p.storeId = cid;
+        s.id = cid;
+      }
+    }
+    // 表示順(ord)と更新時刻(u)を付与
+    d.items.forEach((i, idx) => {
+      if (i.ord === undefined) i.ord = (idx + 1) * 10;
+      if (i.u === undefined) i.u = 0;
+    });
+    for (const s of d.stores) if (s.u === undefined) s.u = 0;
+    for (const p of d.prices) if (p.u === undefined) p.u = 0;
+    d.version = 3;
+  }
   return d;
 }
 
@@ -118,16 +158,113 @@ if (!data || !Array.isArray(data.items)) {
 
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  scheduleSync(); // 同期URLが設定されていれば、少し待ってから自動同期
 }
 
 function itemById(id) { return data.items.find(i => i.id === id); }
 function storeById(id) { return data.stores.find(s => s.id === id); }
 
+// 削除済み(del=true)を除いた一覧。削除は同期のため「印を付けて残す」方式
+function live(arr) { return arr.filter(x => !x.del); }
+function sortedLiveItems() {
+  return live(data.items).sort((a, b) => (a.ord || 0) - (b.ord || 0));
+}
+
+/* ---------- 同期(Google ドライブ / Apps Script) ---------- */
+
+var syncTimer = null;
+var syncing = false;
+
+function getSyncUrl() { return localStorage.getItem(SYNC_URL_KEY) || ''; }
+
+function scheduleSync() {
+  if (!getSyncUrl() || syncing || !navigator.onLine) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => syncNow(true), 3000);
+}
+
+function setSyncStatus(msg) {
+  const el = document.getElementById('sync-status');
+  if (el) el.textContent = msg;
+}
+
+// 2つのデータを合体する。同じIDは更新時刻(u)が新しい方を採用
+function mergeEntities(localArr, remoteArr) {
+  const map = new Map();
+  for (const x of [...localArr, ...remoteArr]) {
+    const cur = map.get(x.id);
+    if (!cur || (x.u || 0) > (cur.u || 0)) map.set(x.id, x);
+  }
+  return [...map.values()];
+}
+
+function mergeData(local, remote) {
+  return {
+    version: 3,
+    items: mergeEntities(local.items, remote.items),
+    stores: mergeEntities(local.stores, remote.stores),
+    prices: mergeEntities(local.prices, remote.prices),
+  };
+}
+
+async function syncNow(silent) {
+  const url = getSyncUrl();
+  if (!url) {
+    if (!silent) setSyncStatus('先に同期用URLを設定してください(設定方法は SYNC_SETUP.md)');
+    return;
+  }
+  if (syncing) return;
+  syncing = true;
+  setSyncStatus('同期中…');
+  try {
+    // 1. ドライブ上のデータを取得して手元のデータと合体
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    let remote = null;
+    try { remote = JSON.parse(text); } catch (e) { /* まだ空 = 初回 */ }
+    if (remote && Array.isArray(remote.items)) {
+      data = mergeData(data, migrate(remote));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+    // 2. 合体結果をドライブへ書き戻す
+    //    (Content-Type を text/plain にするのは Apps Script に届かせるためのお作法)
+    const res2 = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(data),
+    });
+    if (!res2.ok) throw new Error('HTTP ' + res2.status);
+    const stamp = new Date().toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    localStorage.setItem(SYNC_TIME_KEY, stamp);
+    setSyncStatus('✅ 最終同期: ' + stamp);
+    refreshViews();
+  } catch (err) {
+    setSyncStatus('⚠️ 同期できませんでした(オフラインかURLの設定ミスの可能性)');
+  } finally {
+    syncing = false;
+  }
+}
+
+// 同期後に表示中の画面を最新データで描き直す
+function refreshViews() {
+  renderItemList();
+  if (!views.history.hidden) renderHistory();
+  if (!views.settings.hidden) renderSettings();
+  if (!itemDetail.hidden && currentItemId) {
+    renderJudge();
+    renderStats();
+    renderStoreStats();
+    renderChart();
+    renderRecent();
+  }
+}
+
 /* ---------- 相場の計算 ---------- */
 
 function pricesForItem(itemId, withinDays) {
   return data.prices.filter(p => {
-    if (p.itemId !== itemId) return false;
+    if (p.del || p.itemId !== itemId) return false;
     const ago = daysAgo(p.date);
     return ago >= 0 && ago < withinDays;
   });
@@ -218,7 +355,7 @@ function renderItemList() {
   document.getElementById('sort-popular').classList.toggle('active', sortMode === 'popular');
 
   const q = searchBox.value.trim().toLowerCase();
-  const items = data.items.filter(i =>
+  const items = sortedLiveItems().filter(i =>
     !q || i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
 
   if (items.length === 0) {
@@ -309,7 +446,7 @@ function openItemDetail(itemId) {
 
   // 店舗セレクト(前回使った店舗を初期選択)
   const lastStore = localStorage.getItem(LAST_STORE_KEY);
-  dStore.innerHTML = data.stores.map(s =>
+  dStore.innerHTML = live(data.stores).map(s =>
     `<option value="${s.id}" ${s.id === lastStore ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 
   renderJudge();
@@ -477,7 +614,7 @@ function priceText(p) {
 
 function renderRecent() {
   const recent = data.prices
-    .filter(p => p.itemId === currentItemId)
+    .filter(p => !p.del && p.itemId === currentItemId)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
   document.getElementById('d-recent').innerHTML = recent.length
@@ -520,6 +657,7 @@ document.getElementById('btn-register').addEventListener('click', () => {
     storeId: dStore.value,
     price: entry.price,
     date: dDate.value,
+    u: Date.now(),
   };
   if (entry.gram) {
     record.rawPrice = entry.rawPrice;
@@ -553,7 +691,7 @@ document.getElementById('btn-register').addEventListener('click', () => {
 const historyList = document.getElementById('history-list');
 
 function renderHistory() {
-  const records = [...data.prices].sort((a, b) =>
+  const records = live(data.prices).sort((a, b) =>
     b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   if (records.length === 0) {
     historyList.innerHTML = '<p class="empty">まだ記録がありません。<br>「しらべる」タブから価格を登録できます。</p>';
@@ -583,7 +721,9 @@ historyList.addEventListener('click', e => {
     const p = data.prices.find(x => x.id === id);
     const item = p && itemById(p.itemId);
     if (confirm(`この記録を削除しますか?\n${item ? item.name : ''} ${p ? fmtPrice(p.price) + '円 (' + p.date + ')' : ''}`)) {
-      data.prices = data.prices.filter(x => x.id !== id);
+      // 同期のため、消すのではなく削除印を付けて残す
+      p.del = true;
+      p.u = Date.now();
       save();
       renderHistory();
     }
@@ -608,9 +748,9 @@ function openPriceDialog(id) {
   const p = data.prices.find(x => x.id === id);
   if (!p) return;
   editingPriceId = id;
-  document.getElementById('f-price-item').innerHTML = data.items.map(i =>
+  document.getElementById('f-price-item').innerHTML = sortedLiveItems().map(i =>
     `<option value="${i.id}" ${i.id === p.itemId ? 'selected' : ''}>${esc(i.name)}</option>`).join('');
-  document.getElementById('f-price-store').innerHTML = data.stores.map(s =>
+  document.getElementById('f-price-store').innerHTML = live(data.stores).map(s =>
     `<option value="${s.id}" ${s.id === p.storeId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
   // gram 記録は「支払った値段」を編集させる(100g単価は保存時に再計算)
   document.getElementById('f-price-price').value = (p.rawPrice != null) ? p.rawPrice : p.price;
@@ -644,6 +784,7 @@ document.getElementById('form-price').addEventListener('submit', e => {
     p.itemId = itemId;
     p.storeId = document.getElementById('f-price-store').value;
     p.date = document.getElementById('f-price-date').value;
+    p.u = Date.now();
     save();
   }
   dlgPrice.close();
@@ -656,8 +797,9 @@ const dlgItem = document.getElementById('dlg-item');
 let editingItemId = null;
 
 function renderSettings() {
-  const last = data.items.length - 1;
-  document.getElementById('settings-items').innerHTML = data.items.map((i, idx) => `
+  const items = sortedLiveItems();
+  const last = items.length - 1;
+  document.getElementById('settings-items').innerHTML = items.map((i, idx) => `
     <div class="record-row" data-id="${i.id}">
       <div class="move-btns">
         <button class="mini-btn move" data-act="up" type="button" ${idx === 0 ? 'disabled' : ''}>▲</button>
@@ -671,12 +813,19 @@ function renderSettings() {
       <button class="mini-btn danger" data-act="del" type="button">削除</button>
     </div>`).join('');
 
-  document.getElementById('settings-stores').innerHTML = data.stores.map(s => `
+  document.getElementById('settings-stores').innerHTML = live(data.stores).map(s => `
     <div class="record-row" data-id="${s.id}">
       <div class="info"><div class="main-line">${esc(s.name)}</div></div>
       <button class="mini-btn" data-act="edit" type="button">編集</button>
       <button class="mini-btn danger" data-act="del" type="button">削除</button>
     </div>`).join('');
+
+  // 同期設定の表示
+  document.getElementById('sync-url').value = getSyncUrl();
+  const stamp = localStorage.getItem(SYNC_TIME_KEY);
+  setSyncStatus(getSyncUrl()
+    ? (stamp ? '✅ 最終同期: ' + stamp : '未同期(「今すぐ同期」を押してください)')
+    : '未設定(同期しなくてもアプリは使えます)');
 }
 
 document.getElementById('btn-add-item').addEventListener('click', () => openItemDialog(null));
@@ -686,21 +835,26 @@ document.getElementById('settings-items').addEventListener('click', e => {
   if (!btn) return;
   const id = btn.closest('.record-row').dataset.id;
   if (btn.dataset.act === 'up' || btn.dataset.act === 'down') {
-    const idx = data.items.findIndex(i => i.id === id);
+    const items = sortedLiveItems();
+    const idx = items.findIndex(i => i.id === id);
     const to = btn.dataset.act === 'up' ? idx - 1 : idx + 1;
-    if (to < 0 || to >= data.items.length) return;
-    // 隣と入れ替え
-    [data.items[idx], data.items[to]] = [data.items[to], data.items[idx]];
+    if (idx < 0 || to < 0 || to >= items.length) return;
+    // 表示順(ord)を隣と入れ替え
+    [items[idx].ord, items[to].ord] = [items[to].ord, items[idx].ord];
+    items[idx].u = Date.now();
+    items[to].u = Date.now();
     save();
     renderSettings();
     return;
   }
   if (btn.dataset.act === 'del') {
     const item = itemById(id);
-    const n = data.prices.filter(p => p.itemId === id).length;
-    if (confirm(`「${item.name}」を削除しますか?\n価格記録 ${n}件 も一緒に削除されます。`)) {
-      data.items = data.items.filter(i => i.id !== id);
-      data.prices = data.prices.filter(p => p.itemId !== id);
+    const targets = data.prices.filter(p => !p.del && p.itemId === id);
+    if (confirm(`「${item.name}」を削除しますか?\n価格記録 ${targets.length}件 も一緒に削除されます。`)) {
+      const now = Date.now();
+      item.del = true;
+      item.u = now;
+      for (const p of targets) { p.del = true; p.u = now; }
       save();
       renderSettings();
     }
@@ -733,7 +887,7 @@ function openItemDialog(id) {
   fItemUnit.value = item ? item.unit : '100g';
   syncItemUnitField();
   // 既存カテゴリを入力候補に
-  const cats = [...new Set(data.items.map(i => i.category))];
+  const cats = [...new Set(live(data.items).map(i => i.category))];
   document.getElementById('category-list').innerHTML =
     cats.map(c => `<option value="${esc(c)}">`).join('');
   dlgItem.showModal();
@@ -751,9 +905,10 @@ document.getElementById('form-item').addEventListener('submit', e => {
   }
   if (editingItemId) {
     const item = itemById(editingItemId);
-    Object.assign(item, { name, category, unit, gram });
+    Object.assign(item, { name, category, unit, gram, u: Date.now() });
   } else {
-    data.items.push({ id: uid(), name, category, unit, gram });
+    const maxOrd = Math.max(0, ...data.items.map(i => i.ord || 0));
+    data.items.push({ id: uid(), name, category, unit, gram, ord: maxOrd + 10, u: Date.now() });
   }
   save();
   dlgItem.close();
@@ -773,10 +928,12 @@ document.getElementById('settings-stores').addEventListener('click', e => {
   const id = btn.closest('.record-row').dataset.id;
   if (btn.dataset.act === 'del') {
     const store = storeById(id);
-    const n = data.prices.filter(p => p.storeId === id).length;
-    if (confirm(`「${store.name}」を削除しますか?\nこの店舗の価格記録 ${n}件 も一緒に削除されます。`)) {
-      data.stores = data.stores.filter(s => s.id !== id);
-      data.prices = data.prices.filter(p => p.storeId !== id);
+    const targets = data.prices.filter(p => !p.del && p.storeId === id);
+    if (confirm(`「${store.name}」を削除しますか?\nこの店舗の価格記録 ${targets.length}件 も一緒に削除されます。`)) {
+      const now = Date.now();
+      store.del = true;
+      store.u = now;
+      for (const p of targets) { p.del = true; p.u = now; }
       save();
       renderSettings();
     }
@@ -798,9 +955,11 @@ document.getElementById('form-store').addEventListener('submit', e => {
   const name = document.getElementById('f-store-name').value.trim();
   if (!name) return;
   if (editingStoreId) {
-    storeById(editingStoreId).name = name;
+    const store = storeById(editingStoreId);
+    store.name = name;
+    store.u = Date.now();
   } else {
-    data.stores.push({ id: uid(), name });
+    data.stores.push({ id: uid(), name, u: Date.now() });
   }
   save();
   dlgStore.close();
@@ -851,9 +1010,35 @@ importFile.addEventListener('change', () => {
   reader.readAsText(file);
 });
 
+/* ---------- 同期設定のUI ---------- */
+
+document.getElementById('btn-sync-save').addEventListener('click', () => {
+  const url = document.getElementById('sync-url').value.trim();
+  if (url && !url.startsWith('https://script.google.com/')) {
+    alert('Apps Script のウェブアプリURL(https://script.google.com/macros/s/…/exec)を貼り付けてください');
+    return;
+  }
+  localStorage.setItem(SYNC_URL_KEY, url);
+  if (url) {
+    setSyncStatus('URLを保存しました。同期を開始します…');
+    syncNow(false);
+  } else {
+    setSyncStatus('未設定(同期しなくてもアプリは使えます)');
+  }
+});
+
+document.getElementById('btn-sync-now').addEventListener('click', () => syncNow(false));
+
 /* ---------- 起動 ---------- */
 
 renderItemList();
+
+// 起動時に自動同期(URL設定済み & オンラインのときだけ)
+if (getSyncUrl() && navigator.onLine) {
+  syncNow(true);
+}
+// 圏外から復帰したときも同期
+window.addEventListener('online', () => scheduleSync());
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {

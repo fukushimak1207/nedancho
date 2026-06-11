@@ -85,6 +85,18 @@
     <button id="btn-add-store" class="secondary" type="button">＋ 店舗を追加</button>
     <div id="settings-stores"></div>
 
+    <h2>スマホ・PC間の同期</h2>
+    <p class="note">あなたの Google ドライブを経由して、スマホとPCのデータを自動で合体させます。初期設定の手順は
+      <a href="https://github.com/fukushimak1207/nedancho/blob/main/SYNC_SETUP.md" target="_blank" rel="noopener">SYNC_SETUP.md</a> を見てください。</p>
+    <label class="sync-label">同期用URL
+      <input type="url" id="sync-url" placeholder="https://script.google.com/macros/s/…/exec">
+    </label>
+    <div class="btn-row">
+      <button id="btn-sync-save" class="secondary" type="button">URLを保存</button>
+      <button id="btn-sync-now" class="secondary" type="button">今すぐ同期</button>
+    </div>
+    <p class="note" id="sync-status"></p>
+
     <h2>バックアップ</h2>
     <p class="note">データはこの端末のブラウザ内だけに保存されています。ときどきエクスポートしてファイルを保管しておくと安心です。</p>
     <div class="btn-row">

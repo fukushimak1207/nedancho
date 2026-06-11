@@ -346,6 +346,24 @@ button.secondary {
 }
 
 .note { color: var(--muted); font-size: 0.85rem; }
+.note a { color: var(--accent-dark); }
+
+.sync-label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+#sync-url {
+  display: block;
+  width: 100%;
+  font-size: 0.85rem;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  margin-top: 4px;
+}
 .version { margin-top: 24px; text-align: center; }
 
 /* ---------- 下部タブ ---------- */

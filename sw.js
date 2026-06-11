@@ -2,7 +2,7 @@
  * アプリのファイルを端末にキャッシュして、圏外でも開けるようにする。
  * ファイルを更新したら CACHE_VERSION の数字を上げること。
  */
-const CACHE_VERSION = 'nedancho-v5';
+const CACHE_VERSION = 'nedancho-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -31,6 +31,8 @@ self.addEventListener('activate', event => {
 // キャッシュ優先(圏外でも即表示)。なければネットワークへ。
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  // 同期(Google)など外部への通信はキャッシュを使わずそのまま通す
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     caches.match(event.request, { ignoreSearch: true }).then(cached =>
       cached ||
