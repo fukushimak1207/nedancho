@@ -314,10 +314,32 @@ const views = {
 };
 
 document.querySelectorAll('.tab').forEach(btn => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  btn.addEventListener('click', () => {
+    const name = btn.dataset.tab;
+    const st = history.state || {};
+    // 同じ画面を重ねて履歴に積まない
+    if (st.tab !== name || st.item) history.pushState({ tab: name }, '');
+    switchTab(name);
+  });
 });
 
+// スマホの「戻る」で、アプリ内の前の画面(タブ・品目詳細)にもどす
+history.replaceState({ tab: 'check' }, '');
+window.addEventListener('popstate', e => {
+  const st = e.state || { tab: 'check' };
+  switchTab(st.tab || 'check');
+  if (st.item && itemById(st.item)) openItemDetail(st.item, true);
+});
+
+function closeItemDetail() {
+  itemDetail.hidden = true;
+  checkHome.hidden = false;
+  currentItemId = null;
+}
+
 function switchTab(name) {
+  // 「しらべる」タブを押したら、詳細を開いていても品目一覧にもどす
+  if (name === 'check') closeItemDetail();
   for (const [key, el] of Object.entries(views)) el.hidden = (key !== name);
   document.querySelectorAll('.tab').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === name));
@@ -399,9 +421,9 @@ itemListEl.addEventListener('click', e => {
 });
 
 document.getElementById('btn-back').addEventListener('click', () => {
-  itemDetail.hidden = true;
-  checkHome.hidden = false;
-  currentItemId = null;
+  // 詳細を開いたときに履歴へ積んでいるので、戻るボタンも履歴で1つもどる
+  if (history.state && history.state.item) history.back();
+  else closeItemDetail();
 });
 
 /* ---------- しらべる: 品目詳細(判定 + 登録) ---------- */
@@ -430,7 +452,8 @@ function currentEntry() {
   return { ok: true, gram: false, price };
 }
 
-function openItemDetail(itemId) {
+function openItemDetail(itemId, fromHistory) {
+  if (!fromHistory) history.pushState({ tab: 'check', item: itemId }, '');
   currentItemId = itemId;
   const item = itemById(itemId);
   if (!item) return;
@@ -544,14 +567,14 @@ function renderStoreStats() {
   })).sort((a, b) => a.avg - b.avg);
 
   el.innerHTML = `
+  <p class="table-unit">単位: ${suffix}</p>
   <table class="stats-table store-table">
-    <tr class="head"><td>店舗</td><td>平均</td><td>最安</td><td>件数</td></tr>
+    <tr class="head"><td>店舗</td><td>平均</td><td>最安</td></tr>
     ${rows.map((r, idx) => `
     <tr class="${idx === 0 && rows.length > 1 ? 'best-row' : ''}">
-      <td>${idx === 0 && rows.length > 1 ? '<span class="best-badge">最安</span>' : ''}${esc(r.name)}</td>
-      <td>${fmtPrice(r.avg)}${suffix}</td>
-      <td>${fmtPrice(r.min)}${suffix}</td>
-      <td>${r.count}件</td>
+      <td>${idx === 0 && rows.length > 1 ? '<span class="best-badge">最安</span>' : ''}${esc(r.name)}<span class="sub">${r.count}件</span></td>
+      <td>${fmtPrice(r.avg)}</td>
+      <td>${fmtPrice(r.min)}</td>
     </tr>`).join('')}
   </table>`;
 }

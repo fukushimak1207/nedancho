@@ -64,7 +64,7 @@ h3 { font-size: 1rem; margin: 20px 0 6px; color: var(--accent-dark); }
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 7px 0;
+  padding: 12px 0;
   font-size: 0.85rem;
   color: var(--muted);
   cursor: pointer;
@@ -331,13 +331,13 @@ button.secondary {
 
 .move-btns {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .mini-btn.move {
-  padding: 2px 8px;
-  font-size: 0.7rem;
-  line-height: 1.2;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 1rem;
   color: var(--accent-dark);
 }
 .mini-btn.move:disabled {
@@ -357,7 +357,8 @@ button.secondary {
 #sync-url {
   display: block;
   width: 100%;
-  font-size: 0.85rem;
+  /* 16px 未満だと iPhone の Safari が入力時に画面を拡大する */
+  font-size: 1rem;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -434,3 +435,13 @@ dialog input:disabled { background: #f0e9df; color: var(--muted); }
 }
 .dlg-actions button { flex: 1; margin-bottom: 0; }
 .dlg-actions .primary { width: auto; padding: 10px; font-size: 1rem; }
+
+/* 店舗別の相場: 単位は表の上に1回だけ書き、件数は店舗名の下に出す */
+.table-unit { margin: 0 0 4px; font-size: 0.78rem; color: var(--muted); text-align: right; }
+.store-table .sub { display: block; }
+
+/* 押したときに色を変えて、押せたことが分かるようにする */
+.mini-btn:active:not(:disabled),
+.sort-btn:active,
+button.secondary:active,
+.tab:active { filter: brightness(0.9); }
